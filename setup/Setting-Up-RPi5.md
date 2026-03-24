@@ -424,6 +424,46 @@ git pull
 git clone git@github.com:yourusername/repo-name.git
 ```
 
+### Install GitHub CLI (gh)
+
+`gh` lets you create repos, open PRs, and manage GitHub from the terminal.
+
+```bash
+# Install
+(type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget -y)) \
+  && sudo mkdir -p -m 755 /etc/apt/keyrings \
+  && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+  && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  && sudo apt update \
+  && sudo apt install gh -y
+```
+
+### Authenticate gh
+
+```bash
+gh auth login
+```
+
+Choose:
+- **GitHub.com**
+- **SSH** (uses the key you already created)
+- **Login with a web browser** — it prints a code, open the URL on any device, paste the code
+
+Verify:
+
+```bash
+gh auth status
+```
+
+### Create a repo from the terminal
+
+```bash
+gh repo create myrepo --private
+gh repo create myrepo --public --description "My project"
+```
+
 ### Suggested repo structure
 
 Keep separate repos for separate projects:
