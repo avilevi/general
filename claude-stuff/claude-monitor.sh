@@ -28,8 +28,8 @@ echo "Claude Code memory monitor started (threshold: 8GB, checking every ${CHECK
 echo "Alerts will be sent to: $CLAUDE_MONITOR_TO"
 
 while true; do
-    # Check if Claude is running
-    CLAUDE_PID=$(pgrep -f "claude" | head -1)
+    # Check if Claude CLI is running (exclude VSCode extension native binary)
+    CLAUDE_PID=$(pgrep -ax "claude" | grep -v "\.vscode" | awk '{print $1}' | head -1)
 
     if [ -z "$CLAUDE_PID" ]; then
         # Claude not running — reset alert flag so next session gets a fresh alert
@@ -41,8 +41,8 @@ while true; do
         continue
     fi
 
-    # Sum memory (RSS in KB) of all claude processes
-    MEM_KB=$(pgrep -f "claude" | xargs -I{} ps -o rss= -p {} 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+    # Sum memory (RSS in KB) of all claude CLI processes (exclude VSCode extension)
+    MEM_KB=$(pgrep -ax "claude" | grep -v "\.vscode" | awk '{print $1}' | xargs -I{} ps -o rss= -p {} 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
     MEM_GB=$(awk "BEGIN {printf \"%.2f\", $MEM_KB/1024/1024}")
 
     if [ "$MEM_KB" -gt "$THRESHOLD_KB" ] && [ "$ALERT_SENT" -eq 0 ]; then
