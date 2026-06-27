@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/avil/.claude/**)",
+      "Bash(env)",
+      "Bash(ssh-keyscan *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(ssh-keyscan -H nuc-k8.tail23d304.ts.net)",
+      "Bash(ssh nuc-k8.tail23d304.ts.net \"echo 'SSH OK' && uname -a\")",
+      "Bash(ssh *)",
+      "Bash(npm list *)",
+      "Bash(scp /home/avil/.aliases /home/avil/.tcshrc /home/avil/.cshrc /home/avil/setup/deepseek-claude /home/avil/setup/deepseek_api_setup.csh nuc-k8.tail23d304.ts.net:/home/avil/)",
+      "Bash(scp /home/avil/.aliases /home/avil/.tcshrc /home/avil/.cshrc nuc-k8.tail23d304.ts.net:/home/avil/)",
+      "Bash(scp *)"
+    ]
+  }
+}

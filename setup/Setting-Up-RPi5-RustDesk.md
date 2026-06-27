@@ -17,7 +17,11 @@
 10. [Install Claude Code](#step-10--install-claude-code)
 11. [Install Playwright](#step-11--install-playwright)
 12. [Set Up Git & GitHub](#step-12--set-up-git--github)
-13. [Troubleshooting](#troubleshooting)
+13. [Install Python 3](#step-13--install-python-3)
+14. [Cloudflare Tunnel](#step-14--cloudflare-tunnel)
+15. [NovaLife MCP Server](#step-15--novalife-mcp-server)
+16. [Troubleshooting](#troubleshooting)
+17. [Services Inventory](#services-inventory)
 
 ---
 
@@ -562,6 +566,173 @@ github.com/yourusername/
 
 ---
 
+## Step 13 — Install Python 3
+
+```bash
+sudo apt-get install -y python3 python3-pip python3-venv
+python3 --version
+```
+
+> **Note:** On Ubuntu 24.04+, use virtual environments for pip packages. Global installs require `--break-system-packages`.
+
+---
+
+## Step 14 — Cloudflare Tunnel
+
+Cloudflare Tunnel (`cloudflared`) exposes local services to the public internet through Cloudflare's network, with automatic TLS — no port forwarding or router configuration needed.
+
+### Install cloudflared
+
+```bash
+# Add Cloudflare's GPG key and repo
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update
+sudo apt install cloudflared
+```
+
+### Authenticate with Cloudflare
+
+```bash
+cloudflared tunnel login
+```
+
+This opens a browser — log in with your Cloudflare account and authorize the domain.
+
+### Create a tunnel
+
+```bash
+cloudflared tunnel create <tunnel-name>
+```
+
+This creates a tunnel UUID and stores credentials in `~/.cloudflared/<uuid>.json`.
+
+### Configure ingress rules
+
+```bash
+vi ~/.cloudflared/config.yml
+```
+
+```yaml
+tunnel: <tunnel-uuid>
+credentials-file: /home/avil/.cloudflared/<uuid>.json
+
+ingress:
+  - hostname: mcp.novalife.co.il
+    service: http://localhost:9020
+  - hostname: api.nvlf.uk
+    service: http://localhost:80
+  - service: http_status:404
+```
+
+Each `hostname` routes to a local service. The catch-all `http_status:404` rejects unmatched requests.
+
+### Add DNS records
+
+For each hostname, create a CNAME pointing to the tunnel:
+
+```bash
+cloudflared tunnel route dns <tunnel-name> mcp.novalife.co.il
+cloudflared tunnel route dns <tunnel-name> api.nvlf.uk
+```
+
+Cloudflare creates the CNAME automatically (it becomes `<hostname>.nvlf.uk`).
+
+### Run as a systemd service
+
+```bash
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared
+```
+
+### Verify
+
+```bash
+curl https://mcp.novalife.co.il/health
+# Should return the service's health response
+```
+
+---
+
+## Step 15 — NovaLife MCP Server
+
+The NovaLife MCP server is a Python service that bridges AI agents (Claude Desktop, Claude Code, etc.) to the NovaLife REST API via the Model Context Protocol.
+
+**Repo:** `~/git/NovaLife/Misc/mcp-servers/novalife-api/`
+
+### Prerequisites
+
+- A NovaLife API token — generated in WordPress Admin → API Manager
+- An MCP access token — a random secret you make up (e.g. `nf_mcp_` + 64 hex chars)
+
+### Install dependencies
+
+```bash
+cd ~/git/NovaLife/Misc/mcp-servers/novalife-api
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+### Configure the systemd service
+
+```bash
+vi ~/git/NovaLife/Misc/mcp-servers/novalife-api/novalife-mcp.service
+```
+
+Edit these environment variables:
+
+```
+Environment=NOVALIFE_API_URL=https://novalife.co.il/wp-json/novalife/v1
+Environment=NOVALIFE_API_TOKEN=<token-from-wp-admin-api-manager>
+Environment=MCP_ACCESS_TOKEN=<your-mcp-access-token>
+Environment=MCP_HOST=0.0.0.0
+Environment=MCP_PORT=9020
+```
+
+### Install and start
+
+```bash
+sudo cp ~/git/NovaLife/Misc/mcp-servers/novalife-api/novalife-mcp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now novalife-mcp
+sudo systemctl status novalife-mcp
+```
+
+### Expose via Cloudflare Tunnel
+
+Make sure the Cloudflare Tunnel ingress includes:
+
+```yaml
+  - hostname: mcp.novalife.co.il
+    service: http://localhost:9020
+```
+
+### Connect an MCP client
+
+Any MCP-compatible client connects to `https://mcp.novalife.co.il/mcp` with:
+
+```json
+{
+  "mcpServers": {
+    "novalife-api": {
+      "type": "streamable-http",
+      "url": "https://mcp.novalife.co.il/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP_ACCESS_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+- **Claude Desktop:** `claude_desktop_config.json`
+- **Claude Code:** `.mcp.json` (project) or `~/.claude.json` (user)
+- **Other agents:** follow their MCP configuration format
+
+---
+
 ## Troubleshooting
 
 ### RustDesk not listening on port 21118
@@ -631,3 +802,71 @@ sudo tailscale up --reset
 sudo systemctl enable ssh
 sudo systemctl start ssh
 ```
+
+---
+
+## Services Inventory
+
+Every custom service running on this machine. When migrating to the GMKTEC K8, install and configure each one.
+
+### System Services (`sudo systemctl`)
+
+| Service | Purpose | Config File | Port | Migrate? |
+|---------|---------|-------------|------|----------|
+| `cloudflared` | Cloudflare Tunnel — exposes local services to public internet with TLS | `~/.cloudflared/config.yml` | — | **Yes** |
+| `novalife-mcp` | MCP server bridging AI agents to NovaLife API | `~/git/NovaLife/Misc/mcp-servers/novalife-api/novalife-mcp.service` → `/etc/systemd/system/` | 9020 | **Yes** |
+| `tailscaled` | Tailscale VPN — secure mesh network for remote access | Auto-configured | — | **Yes** |
+| `rustdesk` | RustDesk remote desktop (system service — **disable this, use the user service instead**) | N/A | 21118 | No (disable it) |
+| `xrdp` | xrdp remote desktop daemon (legacy — RustDesk replaces this) | `/etc/xrdp/xrdp.ini` | 3389 | **No** |
+| `xrdp-sesman` | xrdp session manager (legacy) | `/etc/xrdp/sesman.ini` | — | **No** |
+| `ssh` | OpenSSH server for terminal access | `/etc/ssh/sshd_config` | 22 | **Yes** |
+
+### User Services (`systemctl --user`)
+
+| Service | Purpose | Config File | Migrate? |
+|---------|---------|-------------|----------|
+| `rustdesk` | RustDesk remote desktop (user service — this is the real one) | `~/.config/systemd/user/rustdesk.service` | **Yes** |
+| `rclone-gdrive` | Mounts Google Drive to `~/GoogleDrive` | `~/.config/systemd/user/rclone-gdrive.service` | **Yes** |
+
+### Non-Service Infrastructure
+
+| Item | Purpose | Location | Migrate? |
+|------|---------|----------|----------|
+| Git repos | All development work | `~/git/` | **Yes** |
+| Claude Code | AI coding assistant | `~/.claude/`, `~/.claude.json` | **Yes** |
+| Google Drive mount | Cloud storage via rclone | `~/GoogleDrive/` | **Yes** |
+| SSH keys | Git auth, server access | `~/.ssh/` | **Yes** |
+| GPG + Git config | Commit signing, identity | `~/.gitconfig`, `~/.gnupg/` | **Yes** |
+| Cloudflared credentials | Tunnel auth certs | `~/.cloudflared/` | **Yes** |
+
+### K8 Migration Notes
+
+**Architecture differences:**
+- The GMKTEC K8 is x86_64 (not ARM64) — all software has native builds, no compatibility workarounds needed
+- Playwright: all three browsers (Chromium, Firefox, WebKit) have first-class x86_64 support
+- No `claude-code@0.2.114` workaround needed — use the latest version normally
+
+**Cloudflare Tunnel:**
+- On the K8, recreate the tunnel (or reuse the same tunnel UUID by copying `~/.cloudflared/`)
+- The tunnel is tied to your Cloudflare account, not the machine
+- After migration, the old Pi tunnel connections will drop once you stop the service there
+
+**NovaLife MCP Server:**
+- The server is just a Python script — copy the repo and recreate the venv
+- The systemd service file is self-contained, just update paths if needed
+- The `NOVALIFE_API_TOKEN` stays the same (it's tied to WordPress, not the machine)
+- Generate a new `MCP_ACCESS_TOKEN` or reuse the existing one
+
+**Tailscale:**
+- Install on the K8, run `sudo tailscale up`, authenticate
+- The Pi and K8 can coexist on the same tailnet with different hostnames
+
+**Migration order (recommended):**
+1. K8: base OS, Tailscale, SSH, RustDesk
+2. K8: Git, SSH keys, clone repos
+3. K8: rclone + Google Drive mount
+4. K8: Node.js, Python, Claude Code, Playwright
+5. K8: Cloudflare Tunnel + NovaLife MCP server
+6. K8: verify everything works
+7. Pi: `sudo systemctl disable --now cloudflared novalife-mcp`
+8. Pi: update Cloudflare Tunnel DNS if needed
